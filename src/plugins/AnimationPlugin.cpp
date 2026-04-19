@@ -54,6 +54,11 @@ void AnimationPlugin::loop()
 void AnimationPlugin::websocketHook(JsonDocument &request)
 {
   const char *event = request["event"];
+  if (event == nullptr)
+  {
+    return;
+  }
+
   if (!strcmp(event, "upload") || !strcmp(event, "resetFrames") || !strcmp(event, "configAnimation")) {
     if (request["frameDelay"].is<int>())
     {

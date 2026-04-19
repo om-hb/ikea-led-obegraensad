@@ -3,6 +3,7 @@
 #include "messages.h"
 #include "scheduler.h"
 #include "websocket.h"
+#include <sstream>
 #ifdef ESP32
 #include <WiFi.h>
 #else
@@ -55,12 +56,18 @@ void handleMessage(AsyncWebServerRequest *request)
   std::string graphParam = request->arg("graph").c_str();
   std::vector<int> graph;
 
-  char *token = strtok(const_cast<char *>(graphParam.c_str()), ",");
-  while (token != nullptr)
+  // Thread-safe parsing using stringstream instead of strtok
+  if (!graphParam.empty())
   {
-    // Convert the substring to an integer and add it to the vector
-    graph.push_back(std::stoi(token));
-    token = strtok(nullptr, ",");
+    std::istringstream ss(graphParam);
+    std::string token;
+    while (std::getline(ss, token, ','))
+    {
+      if (!token.empty())
+      {
+        graph.push_back(std::stoi(token));
+      }
+    }
   }
 
   // Add the message
@@ -81,16 +88,29 @@ void handleMessageRemove(AsyncWebServerRequest *request)
 void handleSetPlugin(AsyncWebServerRequest *request)
 {
   int id = request->arg("id").toInt();
-  pluginManager.setActivePluginById(id);
 
-  if (pluginManager.getActivePlugin() && pluginManager.getActivePlugin()->getId() == id)
+  // Verify plugin exists before requesting
+  std::vector<Plugin *> &allPlugins = pluginManager.getAllPlugins();
+  bool pluginExists = false;
+  for (Plugin *plugin : allPlugins)
   {
-    sendJsonSuccess(request, "Plugin set successfully");
+    if (plugin->getId() == id)
+    {
+      pluginExists = true;
+      break;
+    }
+  }
+
+  if (pluginExists)
+  {
+    // Use non-blocking request to avoid blocking async_tcp task
+    pluginManager.requestPluginById(id);
+    sendJsonSuccess(request, "Plugin change requested");
   }
   else
   {
     char errorMsg[64];
-    snprintf(errorMsg, sizeof(errorMsg), "Could not set plugin to id %d", id);
+    snprintf(errorMsg, sizeof(errorMsg), "Plugin with id %d not found", id);
     sendJsonError(request, 422, errorMsg);
   }
 }
@@ -140,13 +160,18 @@ void handleGetInfo(AsyncWebServerRequest *request)
   jsonDocument["rows"] = ROWS;
   jsonDocument["cols"] = COLS;
   jsonDocument["status"] = currentStatus;
-  jsonDocument["plugin"] = pluginManager.getActivePlugin()->getId();
+  Plugin *activePlugin = pluginManager.getActivePlugin();
+  jsonDocument["plugin"] = activePlugin ? activePlugin->getId() : -1;
   jsonDocument["rotation"] = Screen.currentRotation;
   jsonDocument["brightness"] = Screen.getCurrentBrightness();
   jsonDocument["scheduleActive"] = Scheduler.isActive;
   jsonDocument["rssi"] = WiFi.RSSI();
   jsonDocument["uptime"] = millis() / 1000;
   jsonDocument["freeHeap"] = ESP.getFreeHeap();
+#ifdef ESP32
+  jsonDocument["minFreeHeap"] = ESP.getMinFreeHeap();
+  jsonDocument["maxAllocHeap"] = ESP.getMaxAllocHeap();
+#endif
   jsonDocument["ipAddress"] = WiFi.localIP().toString();
   jsonDocument["macAddress"] = WiFi.macAddress();
 

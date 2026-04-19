@@ -115,10 +115,16 @@ byte PongClockPlugin::getScreenIndex(byte x, byte y)
 
 int PongClockPlugin::pong_predict_y(int x, int y, int angle)
 {
-  while (x >= X_MAX && x <= 256 - X_MAX)
+  // Limit iterations to prevent infinite loop when angle causes minimal x change
+  const int MAX_ITERATIONS = 100;
+  int iterations = 0;
+
+  while (x >= X_MAX && x <= 256 - X_MAX && iterations < MAX_ITERATIONS)
   {
+    iterations++;
+
     if ((y + cos(degToRad(angle)) * X_MAX) + .5 <
-        (X_MAX * Y_MIN)) // Limit gamefield not to mix up wit clock digits
+        (X_MAX * Y_MIN)) // Limit gamefield not to mix up with clock digits
     {
       if (angle > 90 && angle < 270)
       {
@@ -232,7 +238,8 @@ void PongClockPlugin::reset()
 void PongClockPlugin::setup()
 {
   Screen.clear();
-  if (getLocalTime(&timeinfo))
+  // Use longer timeout (2s) during setup to wait for initial NTP sync
+  if (getLocalTime(&timeinfo, 2000))
   {
     current_hour = timeinfo.tm_hour;
     current_minute = timeinfo.tm_min;
@@ -246,8 +253,19 @@ void PongClockPlugin::loop()
 {
   unsigned long currentMillis = millis();
 
-  if (getLocalTime(&timeinfo))
+  // Use timeout of 100ms to avoid blocking, NTP sync happens in background
+  if (getLocalTime(&timeinfo, 100))
   {
+    // NTP recovered from failure - force full redraw
+    if (ntpFailed)
+    {
+      ntpFailed = false;
+      previousDigits.clear();
+      current_hour = timeinfo.tm_hour;
+      current_minute = timeinfo.tm_min;
+      previousMinutes = current_minute;
+      previousHour = current_hour;
+    }
     // clear screen and draw time
     if (previousHour != timeinfo.tm_hour || previousMinutes != timeinfo.tm_min)
     {
@@ -420,6 +438,17 @@ void PongClockPlugin::loop()
                     ballY / PongClockPlugin::Y_MAX,
                     PongClockPlugin::LED_TYPE_ON,
                     ballBrightness);
+  }
+  else if (!ntpFailed)
+  {
+    // NTP sync failed - show X on display
+    ntpFailed = true;
+    Screen.clear();
+    for (int i = 0; i < 8; i++)
+    {
+      Screen.setPixel(4 + i, 4 + i, 1, 15);
+      Screen.setPixel(4 + i, 11 - i, 1, 15);
+    }
   }
 }
 

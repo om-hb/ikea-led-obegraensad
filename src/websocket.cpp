@@ -5,8 +5,33 @@
 
 AsyncWebSocket ws("/ws");
 
+// Rate limiting for WebSocket messages
+static unsigned long lastWsMessage = 0;
+static const unsigned long WS_MIN_INTERVAL_MS = 50;  // Max 20 messages/second
+
+// Rate limiting for sendInfo broadcasts
+static unsigned long lastSendInfo = 0;
+static const unsigned long SEND_INFO_MIN_INTERVAL_MS = 100;  // Max 10 broadcasts/second
+
 void sendInfo()
 {
+  // Don't send if no clients connected
+  if (ws.count() == 0)
+  {
+    return;
+  }
+
+  // Rate limit broadcasts to prevent overwhelming the WebSocket system
+  unsigned long now = millis();
+  if (now - lastSendInfo < SEND_INFO_MIN_INTERVAL_MS)
+  {
+    return;
+  }
+  lastSendInfo = now;
+
+  // Clean up disconnected clients first to prevent queue buildup
+  ws.cleanupClients();
+
   JsonDocument jsonDocument;
   if (currentStatus == NONE)
   {
@@ -17,7 +42,8 @@ void sendInfo()
   }
 
   jsonDocument["status"] = currentStatus;
-  jsonDocument["plugin"] = pluginManager.getActivePlugin()->getId();
+  Plugin *activePlugin = pluginManager.getActivePlugin();
+  jsonDocument["plugin"] = activePlugin ? activePlugin->getId() : -1;
   jsonDocument["persist-plugin"] = pluginManager.getPersistedPluginId();
   jsonDocument["event"] = "info";
   jsonDocument["rotation"] = Screen.currentRotation;
@@ -75,6 +101,14 @@ void onWsEvent(AsyncWebSocket *server,
       }
       else if (info->opcode == WS_TEXT)
       {
+        // Rate limiting: ignore messages that come too fast
+        unsigned long now = millis();
+        if (now - lastWsMessage < WS_MIN_INTERVAL_MS)
+        {
+          return;  // Drop message if too fast
+        }
+        lastWsMessage = now;
+
         data[len] = 0;
 
         JsonDocument wsRequest;
@@ -88,17 +122,28 @@ void onWsEvent(AsyncWebSocket *server,
         }
         else
         {
-          pluginManager.getActivePlugin()->websocketHook(wsRequest);
+          Plugin *activePlugin = pluginManager.getActivePlugin();
+          if (activePlugin)
+          {
+            activePlugin->websocketHook(wsRequest);
+          }
 
           const char *event = wsRequest["event"];
+
+          // Guard against null event (malformed JSON or missing field)
+          if (event == nullptr)
+          {
+            return;
+          }
 
           if (!strcmp(event, "plugin"))
           {
             int pluginId = wsRequest["plugin"];
 
             Scheduler.clearSchedule();
-            pluginManager.setActivePluginById(pluginId);
-            sendInfo();
+            // Use non-blocking request to avoid blocking async_tcp task
+            pluginManager.requestPluginById(pluginId);
+            // sendInfo() will be called by processPendingPluginChange()
           }
           else if (!strcmp(event, "persist-plugin"))
           {

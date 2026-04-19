@@ -11,6 +11,7 @@
 
 #ifdef ESP32
 #include <ESPmDNS.h>
+#include <esp_wifi.h>
 #endif
 #ifdef ESP8266
 #include <ESP8266WiFi.h>
@@ -111,9 +112,26 @@ void connectToWiFi()
   wifiManager.autoConnect(WIFI_MANAGER_SSID);
 
 #ifdef ESP32
+  // WiFi optimizations for low-latency UDP streaming
+  // Disable power saving - critical for consistent packet timing
+  esp_wifi_set_ps(WIFI_PS_NONE);
+
+  // Maximize TX power for better signal
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);
+
+  // Disable AMPDU for lower latency (small packets don't benefit from aggregation)
+  esp_wifi_config_80211_tx_rate(WIFI_IF_STA, WIFI_PHY_RATE_54M);
+
+  Serial.println("WiFi optimized for low-latency streaming");
+#endif
+
+#ifdef ESP32
   if (MDNS.begin(WIFI_HOSTNAME))
   {
     MDNS.addService("http", "tcp", 80);
+    MDNS.addService("ddp", "udp", 4048);      // DDP protocol for display discovery
+    MDNS.addService("artnet", "udp", 6454);   // ArtNet protocol for display discovery
+    MDNS.addService("ledmatrix", "tcp", 80);  // Specific service type for LED matrix
     MDNS.setInstanceName(WIFI_HOSTNAME);
   }
   else
@@ -173,8 +191,33 @@ void baseSetup()
 #ifdef ENABLE_SERVER
   connectToWiFi();
 
-  // set time server using config values
-  configTzTime(config.getTzInfo().c_str(), config.getNtpServer().c_str());
+  // Configure NTP with multiple servers for reliability
+  // Primary: user configured, Secondary: pool.ntp.org, Tertiary: time.google.com
+  Serial.print("[NTP] Configuring with server: ");
+  Serial.println(config.getNtpServer());
+  configTzTime(config.getTzInfo().c_str(),
+               config.getNtpServer().c_str(),
+               "pool.ntp.org",
+               "time.google.com");
+
+  // Wait for initial NTP sync (up to 10 seconds)
+  Serial.print("[NTP] Waiting for sync");
+  struct tm timeinfo;
+  int ntpRetries = 20;  // 20 x 500ms = 10 seconds
+  while (ntpRetries-- > 0 && !getLocalTime(&timeinfo, 500))
+  {
+    Serial.print(".");
+  }
+  if (ntpRetries > 0)
+  {
+    Serial.println(" OK");
+    Serial.printf("[NTP] Current time: %02d:%02d:%02d\n", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+  }
+  else
+  {
+    Serial.println(" FAILED");
+    Serial.println("[NTP] Will continue retrying in background");
+  }
 
   initOTA(server);
   initWebsocketServer(server);
@@ -240,7 +283,7 @@ void setup()
   baseSetup();
   xTaskCreatePinnedToCore(screenDrawingTask,
                           "screenDrawingTask",
-                          10000,
+                          24576,  // 24KB - needed for HTTPS/SSL operations in WeatherPlugin
                           NULL,
                           1,
                           &screenDrawingTaskHandle,
@@ -265,12 +308,29 @@ void setup()
 void loop()
 {
   static uint8_t taskCounter = 0;
+  static unsigned long lastHeapLog = 0;
 
   btn.read();
+
+#ifdef ESP32
+  // Log heap stats every 60 seconds
+  unsigned long now = millis();
+  if (now - lastHeapLog >= 60000)
+  {
+    lastHeapLog = now;
+    Serial.printf("[Heap] Free: %u, Min: %u, MaxBlock: %u\n",
+                  ESP.getFreeHeap(),
+                  ESP.getMinFreeHeap(),
+                  ESP.getMaxAllocHeap());
+  }
+#endif
 
 #ifdef ENABLE_SERVER
   ElegantOTA.loop();
 #endif
+
+  // Process pending plugin changes from async contexts (websocket/HTTP)
+  pluginManager.processPendingPluginChange();
 
 #if !defined(ESP32) && !defined(ESP8266)
   pluginManager.runActivePlugin();

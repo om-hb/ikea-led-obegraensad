@@ -38,6 +38,7 @@ private:
   Plugin *activePlugin = nullptr;
   int nextPluginId;
   int persistedPluginId = 1;
+  volatile int pendingPluginId = -1;  // For async plugin switching
 
   void renderPluginId(int pluginId);
 
@@ -47,6 +48,8 @@ public:
   int addPlugin(Plugin *plugin);
   void setActivePlugin(const char *pluginName);
   void setActivePluginById(int pluginId);
+  void requestPluginById(int pluginId);  // Non-blocking request for async contexts
+  void processPendingPluginChange();     // Called from main task to apply pending change
   void runActivePlugin();
   void setupActivePlugin();
   void activateNextPlugin();
