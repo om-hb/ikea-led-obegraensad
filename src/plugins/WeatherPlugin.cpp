@@ -356,7 +356,7 @@ void WeatherPlugin::teardown()
 void WeatherPlugin::drawWeather()
 {
   Screen.clear();
-  Screen.drawWeather(0, cachedIconY, cachedWeatherIcon, 100);
+  Screen.drawWeather(0, cachedIconY, cachedWeatherIcon, MAX_BRIGHTNESS);
 
   int temperature = cachedTemperature;
   int tempY = cachedTempY;
