@@ -15,11 +15,18 @@ void ArtNetPlugin::setup()
 
 void ArtNetPlugin::teardown()
 {
+  artnet.stop();
 }
 
 void ArtNetPlugin::loop()
 {
   artnet.read();
+
+#ifdef ESP32
+  vTaskDelay(1);  // Feed watchdog, allow other tasks to run
+#else
+  delay(1);
+#endif
 }
 
 const char *ArtNetPlugin::getName() const
@@ -29,8 +36,6 @@ const char *ArtNetPlugin::getName() const
 
 void ArtNetPlugin::onDmxFrame(uint16_t universe, uint16_t length, uint16_t outgoing, uint8_t *data)
 {
-  Serial.print("Universe: ");
-  Serial.println(universe);
   if (universe == 0 || universe == outgoing)
   {
     for (int i = 0; i < ROWS * COLS; i++)
@@ -44,16 +49,15 @@ void ArtNetPlugin::websocketHook(JsonDocument &request)
 {
   const char *event = request["event"];
 
-  if (currentStatus == NONE)
+  if (event == nullptr || currentStatus != NONE)
   {
-    if (!strcmp(event, "artnet"))
-    {
-      uint16_t universe = request["universe"].as<uint16_t>();
-      Serial.print("Changing ArtNet Universe to ");
-      Serial.println(universe);
-      artnet.setUniverse(universe);
-      Serial.print("Current Universe: ");
-      Serial.println(artnet.getOutgoing());
-    }
+    return;
+  }
+
+  if (!strcmp(event, "artnet"))
+  {
+    uint16_t universe = request["universe"].as<uint16_t>();
+    Serial.printf("[ArtNet] Changing universe to %d\n", universe);
+    artnet.setUniverse(universe);
   }
 }

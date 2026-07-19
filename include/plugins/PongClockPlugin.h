@@ -27,6 +27,7 @@ private:
 
   int previousMinutes, previousHour, ballAngle = 0, fadeLength = 0, current_minute = 0,
                                      current_hour = 0;
+  bool ntpFailed = false;
 
   std::vector<int> previousDigits;
 

@@ -4,14 +4,27 @@ void TickingClockPlugin::setup()
 {
   previousMinutes = -1;
   previousHour = -1;
+  previousSecond = -1;
   previousHH.clear();
   previousMM.clear();
 }
 
 void TickingClockPlugin::loop()
 {
-  if (getLocalTime(&timeinfo))
+  // Use timeout of 100ms to avoid blocking, NTP sync happens in background
+  if (getLocalTime(&timeinfo, 100))
   {
+    // NTP recovered from failure - force full redraw
+    if (ntpFailed)
+    {
+      ntpFailed = false;
+      previousHH.clear();
+      previousMM.clear();
+      previousHour = -1;
+      previousMinutes = -1;
+      previousSecond = -1;
+    }
+
     if (previousHour != timeinfo.tm_hour || previousMinutes != timeinfo.tm_min)
     {
 
@@ -94,6 +107,17 @@ void TickingClockPlugin::loop()
         Screen.setPixel(timeinfo.tm_sec * 16 / 60, 8, 1, Screen.getCurrentBrightness());
 
       previousSecond = timeinfo.tm_sec;
+    }
+  }
+  else if (!ntpFailed)
+  {
+    // NTP sync failed - show X on display
+    ntpFailed = true;
+    Screen.clear();
+    for (int i = 0; i < 8; i++)
+    {
+      Screen.setPixel(4 + i, 4 + i, 1, 15);
+      Screen.setPixel(4 + i, 11 - i, 1, 15);
     }
   }
 }

@@ -142,6 +142,7 @@ void PluginManager::setActivePlugin(const char *pluginName)
     {
       currentStatus = LOADING; // Prevent plugin loop from drawing during ID display
       activePlugin = plugin;
+      Serial.printf("[Plugin] Activating: %s (ID: %d)\n", plugin->getName(), plugin->getId());
       renderPluginId(activePlugin->getId());
       currentStatus = NONE; // Allow plugin to start drawing
       activePlugin->setup();
@@ -158,6 +159,25 @@ void PluginManager::setActivePluginById(int pluginId)
     {
       setActivePlugin(plugin->getName());
     }
+  }
+}
+
+void PluginManager::requestPluginById(int pluginId)
+{
+  // Non-blocking: just set the pending ID, main task will handle it
+  pendingPluginId = pluginId;
+}
+
+void PluginManager::processPendingPluginChange()
+{
+  int pending = pendingPluginId;
+  if (pending >= 0)
+  {
+    pendingPluginId = -1;  // Clear before processing to avoid re-entry
+    setActivePluginById(pending);
+#ifdef ENABLE_SERVER
+    sendInfo();
+#endif
   }
 }
 

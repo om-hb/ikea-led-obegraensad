@@ -21,6 +21,7 @@ Turn your OBEGRÄNSAD LED Wall Lamp into a live drawing canvas
 - [Software Setup](#software-setup)
   - [ESP32 Setup with VS Code and PlatformIO](#esp32-setup-with-vs-code-and-platformio)
   - [WiFi Configuration](#wifi-configuration)
+  - [Runtime Configuration](#runtime-configuration)
 - [OTA Updates](#ota-updates)
   - [Configuration](#configuration)
   - [Upload Methods](#upload-methods)
@@ -32,7 +33,9 @@ Turn your OBEGRÄNSAD LED Wall Lamp into a live drawing canvas
   - [Message Display](#message-display)
   - [Plugin Scheduler](#plugin-scheduler)
   - [Storage Management](#storage-management)
+  - [Configuration Management](#configuration-management)
 - [DDP (Display Data Protocol)](#ddp-display-data-protocol)
+- [ArtNet](#artnet)
 - [Home Assistant Integration](#home-assistant-integration)
 - [Development](#development)
   - [Plugin Development](#plugin-development)
@@ -52,6 +55,8 @@ Turn your OBEGRÄNSAD LED Wall Lamp into a live drawing canvas
 - WiFi Control
 - Web GUI
 - Load an image
+- Runtime configuration for Weather / NTP / Timezone via `/config`
+- DDP and ArtNet streaming support
 - Switch plugin by pressing the button
 - Schedule Plugins to switch after "n" seconds
 
@@ -68,10 +73,25 @@ Turn your OBEGRÄNSAD LED Wall Lamp into a live drawing canvas
 - Big Clock
 - Weather
 - Rain
+- Matrix Rain
 - Animation (with Animation Creator in Web UI)
 - Firework
+- Blob
+- Spiral
+- Wave
+- Checkerboard
+- Radar
+- Bubbles
+- Comet
+- Fireflies
+- Meteor Shower
+- Scanlines
+- Sparkle Field
+- Wave Bars
 - DDP (Display Data Protocol)
 - Pong Clock
+- Ticking Clock
+- ArtNet
 
 </details>
 
@@ -83,6 +103,8 @@ Control the lamp using the built-in web GUI. Find the device IP address via:
 
 - Serial monitor output
 - Router admin panel
+
+For runtime configuration after the first boot, open `http://your-device-ip/config`.
 
 ---
 
@@ -196,6 +218,18 @@ This project uses [tzapu's WiFiManager](https://github.com/tzapu/WiFiManager). A
 **ESP8266 (Manual Configuration):**
 
 For ESP8266, WiFi Manager is not available. Set `WIFI_SSID` and `WIFI_PASSWORD` in `include/secrets.h`.
+
+### Runtime Configuration
+
+After the first boot you can configure some settings directly in the browser at `http://your-device-ip/config`.
+
+Currently configurable at runtime:
+
+- Weather location
+- NTP server
+- Timezone (POSIX TZ string)
+
+The same settings are also available via `GET /api/config`, `POST /api/config`, and `POST /api/config/reset`.
 
 ---
 
@@ -317,6 +351,8 @@ curl http://your-server/api/info
 }
 ```
 
+The response also includes additional diagnostics fields such as RSSI, uptime, heap usage, IP / MAC address, and the persisted plugin id.
+
 ---
 
 ### Plugin Control
@@ -338,7 +374,7 @@ curl -X PATCH "http://your-server/api/plugin?id=7"
 ```json
 {
   "status": "success",
-  "message": "Plugin set successfully"
+  "message": "Plugin change requested"
 }
 ```
 
@@ -347,9 +383,11 @@ curl -X PATCH "http://your-server/api/plugin?id=7"
 ```json
 {
   "error": true,
-  "errormessage": "Could not set plugin to id 7"
+  "message": "Plugin with id 999 not found"
 }
 ```
+
+Use `GET /api/info` to discover the current plugin ids instead of relying on hardcoded numbers.
 
 ---
 
@@ -387,14 +425,12 @@ GET /api/data
 **Example:**
 
 ```bash
-curl http://your-server/api/data
+curl http://your-server/api/data --output frame.raw
 ```
 
 **Response:**
 
-```json
-[255, 255, 255, 0, 128, 255, 255, 0, ...]
-```
+Raw `application/octet-stream` payload with 256 bytes, one byte per pixel.
 
 ---
 
@@ -463,6 +499,8 @@ POST /api/schedule
 curl -X POST http://your-server/api/schedule -d 'schedule=[{"pluginId":10,"duration":2},{"pluginId":8,"duration":5}]'
 ```
 
+`duration` is specified in seconds.
+
 #### Start Schedule
 
 ```http
@@ -488,13 +526,44 @@ GET /api/schedule/clear
 #### Clear Storage
 
 ```http
-GET /api/clearstorage
+GET /api/storage/clear
 ```
 
 **Example:**
 
 ```bash
-curl http://your-server/api/clearstorage
+curl http://your-server/api/storage/clear
+```
+
+---
+
+### Configuration Management
+
+#### Get Runtime Configuration
+
+```http
+GET /api/config
+```
+
+#### Update Runtime Configuration
+
+```http
+POST /api/config
+Content-Type: application/json
+```
+
+**Example:**
+
+```bash
+curl -X POST http://your-server/api/config \
+  -H 'Content-Type: application/json' \
+  -d '{"weatherLocation":"Hamburg","ntpServer":"de.pool.ntp.org","tzInfo":"CET-1CEST,M3.5.0,M10.5.0/3","autoStartSchedule":false}'
+```
+
+#### Reset Runtime Configuration
+
+```http
+POST /api/config/reset
 ```
 
 ---
@@ -519,18 +588,22 @@ VS Code should detect the venv automatically and prompt you to activate it. Once
 poetry run python ddp.py clear
 ```
 
+If you want automatic plugin switching or mDNS discovery for the helper scripts, also install:
+
+```bash
+pip install websocket-client zeroconf
+```
+
 ### Quick Start
 
 1. **Enable DDP Plugin**
 
-   ```bash
-   curl -X PATCH "http://your-server/api/plugin?id=17"
-   ```
+   Use the web UI, or query `GET /api/info` and switch to the plugin whose name is `DDP`.
 
 2. **Send Pixels**
 
    ```bash
-   python3 ddp.py --ip 192.168.178.50 --fill 128
+   python3 ddp.py fill 128 --ip 192.168.178.50
    ```
 
 ### Using ddp.py
@@ -583,42 +656,67 @@ python3 ddp.py pixels --ip 192.168.178.50 -p 0 0 255 -p 15 15 128
 
 ### Protocol Specification
 
-**Packet Structure:**
+**Packet Structure (current default mode):**
 
 ```text
-[Header: 10 bytes][RGB Data: 768 bytes for 16×16]
+[Header: 10 bytes][Grayscale Data: 256 bytes for 16×16]
 ```
 
 **Header (10 bytes):**
 
-- Byte 0: `0x41` (Version 1)
-- Byte 1: `0x00` (Flags)
-- Bytes 2-9: `0x00` (Reserved)
+- Byte 0: Version / flags
+- Byte 3: Data type
+- Bytes 4-7: Offset
+- Bytes 8-9: Payload length
 
-**RGB Data:**
+**Payload types:**
 
-- 3 bytes per pixel (R, G, B)
-- Total: 16 × 16 × 3 = 768 bytes
-- Order: Row-major (left to right, top to bottom)
-- Brightness calculated as: `(R + G + B) / 3`
+- `0x02`: Grayscale, 1 byte per pixel (preferred)
+- `0x01`: Legacy RGB, 3 bytes per pixel (still supported)
 
-**Single Pixel Mode:**
-Send only 3 RGB bytes (total: 13 bytes) to apply the same color to all pixels.
+The firmware quantizes incoming brightness values from `0..255` down to the display's `0..15` brightness range.
 
 **Example (Python):**
 
 ```python
 import socket
 
-# Create DDP packet
-header = bytearray([0x41, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
-pixels = bytearray([128, 128, 128] * 256)  # Fill with mid-brightness
+# Create grayscale DDP packet
+header = bytearray([0x41, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00])
+pixels = bytearray([128] * 256)
 packet = header + pixels
 
 # Send packet
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.sendto(packet, ("192.168.178.50", 4048))
 sock.close()
+```
+
+---
+
+## ArtNet
+
+ArtNet is also supported for UDP-based streaming on port `6454`.
+
+### Quick Start
+
+1. **Enable ArtNet Plugin**
+
+   Use the web UI, or query `GET /api/info` and switch to the plugin whose name is `ArtNet`.
+
+2. **Send Pixels**
+
+   ```bash
+   python3 artnet.py --ip 192.168.178.50 fill 128
+   ```
+
+**Examples:**
+
+```bash
+python3 artnet.py --discover fill 128
+python3 artnet.py --ip 192.168.178.50 clear
+python3 artnet.py --ip 192.168.178.50 pixels -p 8 8 255
+python3 artnet.py --ip 192.168.178.50 --universe 1 fill 128
 ```
 
 ---
@@ -638,12 +736,12 @@ Example automation to adjust brightness based on sun position:
 ```yaml
 rest_command:
   obegraensad_brightness_high:
-    url: 'http://your-server/api/brightness/'
+    url: 'http://your-server/api/brightness'
     method: PATCH
     content_type: 'application/x-www-form-urlencoded'
     payload: 'value=100'
   obegraensad_brightness_low:
-    url: 'http://your-server/api/brightness/'
+    url: 'http://your-server/api/brightness'
     method: PATCH
     content_type: 'application/x-www-form-urlencoded'
     payload: 'value=1'

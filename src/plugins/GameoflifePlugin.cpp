@@ -175,14 +175,15 @@ void GameOfLifePlugin::websocketHook(JsonDocument &request)
 {
   const char *event = request["event"];
 
-  if (currentStatus == NONE)
+  if (event == nullptr || currentStatus != NONE)
   {
-    if (!strcmp(event, "goldelay"))
-    {
-      uint16_t new_delay = request["delay"].as<uint16_t>();
-      Serial.print("Changing Game of life delay to ");
-      Serial.println(new_delay);
-      gol_delay = new_delay;
-    }
+    return;
+  }
+
+  if (!strcmp(event, "goldelay"))
+  {
+    uint16_t new_delay = request["delay"].as<uint16_t>();
+    Serial.printf("[GameOfLife] Changing delay to %d\n", new_delay);
+    gol_delay = new_delay;
   }
 }

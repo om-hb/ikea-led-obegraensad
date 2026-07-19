@@ -294,30 +294,33 @@ void Screen_::drawLine(int x1, int y1, int x2, int y2, int ledStatus, uint8_t br
 {
   int dx = abs(x2 - x1);
   int sx = x1 < x2 ? 1 : -1;
-  int dy = abs(y2 - y1);
+  int dy = -abs(y2 - y1);
   int sy = y1 < y2 ? 1 : -1;
-  int error = (dx > dy ? dx : -dy) / 2;
+  int error = dx + dy;
 
-  while (x1 != x2 || y1 != y2)
+  // Limit iterations to prevent infinite loop from bad input
+  int maxIterations = 256;
+
+  while (maxIterations-- > 0)
   {
     setPixel(x1, y1, ledStatus, brightness);
 
-    int error2 = error;
-    if (error2 > -dx)
-    {
-      error -= dy;
-      x1 += sx;
-      setPixel(x1, y1, ledStatus, brightness);
-    }
+    if (x1 == x2 && y1 == y2)
+      break;
 
-    else if (error2 < dy)
+    int e2 = 2 * error;
+    if (e2 >= dy)
+    {
+      error += dy;
+      x1 += sx;
+    }
+    if (e2 <= dx)
     {
       error += dx;
       y1 += sy;
-      setPixel(x1, y1, ledStatus, brightness);
     }
-  };
-};
+  }
+}
 
 void Screen_::drawRectangle(int x,
                             int y,
