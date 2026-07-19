@@ -20,7 +20,7 @@ void BreakoutPlugin::initBricks()
     this->bricks[i].y = i / this->X_MAX;
     Screen.setPixelAtIndex(this->bricks[i].y * this->X_MAX + this->bricks[i].x,
                            this->LED_TYPE_ON,
-                           50);
+                           MAX_BRIGHTNESS);
 
 #ifdef ESP32
     vTaskDelay(pdMS_TO_TICKS(25));
@@ -39,12 +39,12 @@ void BreakoutPlugin::newLevel()
     this->paddle[i].y = this->Y_MAX - 1;
     Screen.setPixelAtIndex(this->paddle[i].y * this->X_MAX + this->paddle[i].x,
                            this->LED_TYPE_ON,
-                           50);
+                           MAX_BRIGHTNESS);
   }
   this->ball.x = this->paddle[1].x;
   this->ball.y = this->paddle[1].y - 1;
 
-  Screen.setPixelAtIndex(ball.y * this->X_MAX + ball.x, this->LED_TYPE_ON, 128);
+  Screen.setPixelAtIndex(ball.y * this->X_MAX + ball.x, this->LED_TYPE_ON, MAX_BRIGHTNESS);
   this->ballMovement[0] = 1;
   this->ballMovement[1] = -1;
   this->lastBallUpdate = 0;
@@ -101,7 +101,7 @@ void BreakoutPlugin::updateBall()
   this->ball.x += this->ballMovement[0];
   this->ball.y += this->ballMovement[1];
 
-  Screen.setPixelAtIndex(this->ball.y * this->X_MAX + this->ball.x, this->LED_TYPE_ON, 100);
+  Screen.setPixelAtIndex(this->ball.y * this->X_MAX + this->ball.x, this->LED_TYPE_ON, MAX_BRIGHTNESS);
 }
 
 void BreakoutPlugin::hitBrick(byte i)
@@ -179,7 +179,7 @@ void BreakoutPlugin::updatePaddle()
     }
     for (byte i = 0; i < this->PADDLE_WIDTH; i++)
     {
-      Screen.setPixelAtIndex(this->paddle[i].y * this->X_MAX + this->paddle[i].x, this->LED_TYPE_ON);
+      Screen.setPixelAtIndex(this->paddle[i].y * this->X_MAX + this->paddle[i].x, this->LED_TYPE_ON, MAX_BRIGHTNESS);
     }
   }
   else
