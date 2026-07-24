@@ -173,8 +173,33 @@ void baseSetup()
 #ifdef ENABLE_SERVER
   connectToWiFi();
 
-  // set time server using config values
-  configTzTime(config.getTzInfo().c_str(), config.getNtpServer().c_str());
+  // Configure NTP with multiple servers for reliability
+  // Primary: user configured, Secondary: pool.ntp.org, Tertiary: time.google.com
+  Serial.print("[NTP] Configuring with server: ");
+  Serial.println(config.getNtpServer());
+  configTzTime(config.getTzInfo().c_str(),
+               config.getNtpServer().c_str(),
+               "pool.ntp.org",
+               "time.google.com");
+
+  // Wait for initial NTP sync (up to 10 seconds)
+  Serial.print("[NTP] Waiting for sync");
+  struct tm timeinfo;
+  int ntpRetries = 20;  // 20 x 500ms = 10 seconds
+  while (ntpRetries-- > 0 && !getLocalTime(&timeinfo, 500))
+  {
+    Serial.print(".");
+  }
+  if (ntpRetries > 0)
+  {
+    Serial.println(" OK");
+    Serial.printf("[NTP] Current time: %02d:%02d:%02d\n", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+  }
+  else
+  {
+    Serial.println(" FAILED");
+    Serial.println("[NTP] Will continue retrying in background");
+  }
 
   initOTA(server);
   initWebsocketServer(server);

@@ -232,7 +232,8 @@ void PongClockPlugin::reset()
 void PongClockPlugin::setup()
 {
   Screen.clear();
-  if (getLocalTime(&timeinfo))
+  // Use longer timeout (2s) during setup to wait for initial NTP sync
+  if (getLocalTime(&timeinfo, 2000))
   {
     current_hour = timeinfo.tm_hour;
     current_minute = timeinfo.tm_min;
@@ -246,8 +247,19 @@ void PongClockPlugin::loop()
 {
   unsigned long currentMillis = millis();
 
-  if (getLocalTime(&timeinfo))
+  // Use timeout of 100ms to avoid blocking, NTP sync happens in background
+  if (getLocalTime(&timeinfo, 100))
   {
+    // NTP recovered from failure - force full redraw
+    if (ntpFailed)
+    {
+      ntpFailed = false;
+      previousDigits.clear();
+      current_hour = timeinfo.tm_hour;
+      current_minute = timeinfo.tm_min;
+      previousMinutes = current_minute;
+      previousHour = current_hour;
+    }
     // clear screen and draw time
     if (previousHour != timeinfo.tm_hour || previousMinutes != timeinfo.tm_min)
     {
@@ -420,6 +432,17 @@ void PongClockPlugin::loop()
                     ballY / PongClockPlugin::Y_MAX,
                     PongClockPlugin::LED_TYPE_ON,
                     ballBrightness);
+  }
+  else if (!ntpFailed)
+  {
+    // NTP sync failed - show X on display
+    ntpFailed = true;
+    Screen.clear();
+    for (int i = 0; i < 8; i++)
+    {
+      Screen.setPixel(4 + i, 4 + i, 1, 15);
+      Screen.setPixel(4 + i, 11 - i, 1, 15);
+    }
   }
 }
 
