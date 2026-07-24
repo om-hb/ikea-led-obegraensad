@@ -75,23 +75,12 @@ void Config::load()
   }
   
   try {
-    // Load with fallback to defaults. Use isKey() to avoid triggering NVS "NOT_FOUND" logs
-    // when keys are absent.
-    if (preferences.isKey("weatherLoc")) {
-      weatherLocation = preferences.getString("weatherLoc", String(WEATHER_LOCATION));
-    }
-
-    if (preferences.isKey("ntpServer")) {
-      ntpServer = preferences.getString("ntpServer", String(NTP_SERVER));
-    }
-
-    if (preferences.isKey("tzInfo")) {
-      tzInfo = preferences.getString("tzInfo", String(TZ_INFO));
-    }
-
-    // bool reads are cheap and don't log errors when missing because getBool accepts a default
+    // Load with fallback to defaults
+    weatherLocation = preferences.getString("weatherLoc", String(WEATHER_LOCATION));
+    ntpServer = preferences.getString("ntpServer", String(NTP_SERVER));
+    tzInfo = preferences.getString("tzInfo", String(TZ_INFO));
     autoStartSchedule = preferences.getBool("autoSchedule", false);
-
+    
     Serial.println("[Config] Configuration loaded from storage");
   } catch (...) {
     Serial.println("[Config] Error loading config, using defaults");
